@@ -21,8 +21,9 @@ const mealRoutes = require('./routes/mealRoutes');
 const app = express();
 
 // Middleware: CORS Configured for Vite React Dev Server
+// Added both localhost and 127.0.0.1 to prevent CORS blocking
 app.use(cors({
-  origin: [process.env.FRONTEND_URL, 'http://127.0.0.1:5173'],
+  origin: [process.env.FRONTEND_URL, 'http://localhost:5173', 'http://127.0.0.1:5173'],
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization']
@@ -34,14 +35,6 @@ app.use(express.json()); // Parses incoming JSON requests
 // Appended 'hostel_tracker' so Mongoose creates/uses the correct database
 const MONGO_URI = process.env.MONGO_URI || "mongodb+srv://lovepreetsingh200626_db_user:yt5csle8Py6cLcJn@cluster0.kih67sm.mongodb.net/hostel_tracker?retryWrites=true&w=majority";
 
-mongoose.connect(MONGO_URI)
-  .then(() => {
-    console.log("✅ Connected to MongoDB successfully");
-  })
-  .catch((err) => {
-    console.error("❌ MongoDB connection error:", err.message);
-  });
-
 // API Route Mounts
 app.use('/api/auth', authRoutes);
 app.use('/api/hostels', hostelRoutes);
@@ -52,8 +45,22 @@ app.get('/', (req, res) => {
   res.json({ status: 'active', message: 'Hostel Meal & Attendance API is running!' });
 });
 
-// Start Server
+// Start Server ONLY AFTER MongoDB connects successfully
 const PORT = process.env.PORT || 5000;
-app.listen(PORT, () => {
-  console.log(`🚀 Server listening on port ${PORT}`);
-});
+
+mongoose.connect(MONGO_URI, {
+  serverSelectionTimeoutMS: 5000 // Fail fast after 5s instead of hanging for 10s
+})
+  .then(() => {
+    console.log("✅ Connected to MongoDB successfully");
+    
+    // Server starts listening only when DB is ready
+    app.listen(PORT, () => {
+      console.log(`🚀 Server listening on port ${PORT}`);
+    });
+  })
+  .catch((err) => {
+    console.error("❌ MongoDB connection error:", err.message);
+    console.error("👉 TIP: Check your internet connection or MongoDB Atlas IP Whitelist (0.0.0.0/0)");
+    process.exit(1); // Stop the process so you don't run a broken server
+  });
