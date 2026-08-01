@@ -2,6 +2,7 @@ const express = require('express');
 const mongoose = require('mongoose');
 const cors = require('cors');
 const dns = require('dns');
+const complaintRoutes = require('./routes/complaintRoutes');
 
 // Explicitly set reliable fallback DNS servers (Cloudflare / Google)
 // Used to prevent SRV lookup failures on campus/local ISP networks
@@ -39,7 +40,7 @@ const MONGO_URI = process.env.MONGO_URI || "mongodb+srv://lovepreetsingh200626_d
 app.use('/api/auth', authRoutes);
 app.use('/api/hostels', hostelRoutes);
 app.use('/api/meals', mealRoutes);
-
+app.use('/api/complaints', complaintRoutes);
 // Root Health Check Endpoint
 app.get('/', (req, res) => {
   res.json({ status: 'active', message: 'Hostel Meal & Attendance API is running!' });
