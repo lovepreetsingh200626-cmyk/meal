@@ -15,10 +15,20 @@ const adminSchema = new mongoose.Schema({
   role: { 
     type: String, 
     default: 'admin' 
+  },
+  // --- ADDED ADMIN PROFILE DETAILS ---
+  mobileNo: { 
+    type: String 
+  },
+  dob: { 
+    type: String 
+  },
+  profilePhoto: { 
+    type: String 
   }
 }, { timestamps: true });
 
-// Modern Async Hook: Do not pass or call next()
+// Hash password automatically before saving
 adminSchema.pre('save', async function () {
   if (!this.isModified('password')) return;
   const salt = await bcrypt.genSalt(10);
