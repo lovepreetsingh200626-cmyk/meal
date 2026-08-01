@@ -30,7 +30,9 @@ app.use(cors({
   allowedHeaders: ['Content-Type', 'Authorization']
 }));
 
-app.use(express.json()); // Parses incoming JSON requests
+// INCREASE THE BODY LIMIT HERE:
+app.use(express.json({ limit: '10mb' }));
+app.use(express.urlencoded({ limit: '10mb', extended: true })); // Parses incoming JSON requests
 
 // MongoDB Connection
 // Appended 'hostel_tracker' so Mongoose creates/uses the correct database
