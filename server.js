@@ -49,7 +49,7 @@ app.use('/api/notices', noticeRoutes);
 
 // Root Health Check Endpoint
 app.get('/', (req, res) => {
-  res.json({ status: 'active', message: 'Hostel Meal & Attendance API is running!' });
+  res.json({ status: 'active', message: 'Hostel Meal & Attendance API is running good!' });
 });
 
 // Start Server ONLY AFTER MongoDB connects successfully
