@@ -37,7 +37,7 @@ app.use(express.urlencoded({ limit: '10mb', extended: true })); // Parses incomi
 
 // MongoDB Connection
 // Appended 'hostel_tracker' so Mongoose creates/uses the correct database
-const MONGO_URI = process.env.MONGO_URI || "mongodb+srv://lovepreetsingh200626_db_user:yt5csle8Py6cLcJn@cluster0.kih67sm.mongodb.net/hostel_tracker?retryWrites=true&w=majority";
+const MONGO_URI = process.env.MONGO_URI 
 
 // API Route Mounts
 app.use('/api/auth', authRoutes);

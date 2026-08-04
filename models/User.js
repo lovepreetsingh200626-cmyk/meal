@@ -5,7 +5,7 @@ const userSchema = new mongoose.Schema({
   name: { type: String, required: true },
   
   studentId: { type: String, required: true, unique: true, trim: true },
-  rollNo: { type: String, required: true, unique: true, trim: true },
+  rollNo: { type: String, required: true,  trim: true },
   
   university: { type: String, default: '' },
   department: { type: String, default: '' },
