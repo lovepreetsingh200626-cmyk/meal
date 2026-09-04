@@ -89,4 +89,31 @@ router.put('/:hostelNumber/meal-costs', async (req, res) => {
   }
 });
 
+// ==========================================
+// ADMIN: UPDATE HOSTEL DIET RATES
+// ==========================================
+router.put('/:id/rates', async (req, res) => {
+  try {
+    const { mealCosts } = req.body;
+    
+    if (!mealCosts || !mealCosts.breakfast || !mealCosts.lunch || !mealCosts.dinner) {
+      return res.status(400).json({ message: 'All three meal rates (breakfast, lunch, dinner) are required.' });
+    }
+
+    const updatedHostel = await Hostel.findByIdAndUpdate(
+      req.params.id,
+      { $set: { mealCosts: mealCosts } },
+      { new: true, runValidators: true }
+    );
+
+    if (!updatedHostel) {
+      return res.status(404).json({ message: 'Hostel not found.' });
+    }
+
+    res.json({ message: 'Hostel diet rates updated successfully', hostel: updatedHostel });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 module.exports = router;
