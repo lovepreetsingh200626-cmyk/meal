@@ -66,8 +66,7 @@ router.post('/register', async (req, res) => {
     if (!password || password.length < 8) return res.status(400).json({ message: 'Password must be at least 8 characters long.' });
     if (!university || !university.trim()) return res.status(400).json({ message: 'Course / Degree Name is required.' });
     if (!department || !department.trim()) return res.status(400).json({ message: 'Department Name is required.' });
-    const resolvedFaculty = faculty || facultyName;
-    if (!resolvedFaculty || !resolvedFaculty.trim()) return res.status(400).json({ message: 'Faculty Name is required.' });
+    const resolvedFaculty = faculty || facultyName || 'General';
     if (!session || !session.trim()) return res.status(400).json({ message: 'Academic Session is required.' });
     if (!domicileState || !domicileState.trim()) return res.status(400).json({ message: 'Domicile State is required.' });
     if (!category || !category.trim()) return res.status(400).json({ message: 'Category is required.' });
@@ -118,18 +117,17 @@ router.post('/register', async (req, res) => {
     });
 
     await newUser.save();
-    console.log("Registered New Student with Photo:", newUser.studentId);
+    console.log("✅ [REGISTER SUCCESS] New Student Registered:", newUser.studentId);
 
-    // Issue JWT token upon registration
     const token = jwt.sign({ id: newUser._id, role: newUser.role }, JWT_SECRET, { expiresIn: '1d' });
 
     res.status(201).json({ 
       message: 'Student registered successfully!', 
       token, 
-      newUser, 
       user: newUser 
     });
   } catch (error) {
+    console.error("❌ [REGISTER ERROR CRITICAL]:", error);
     if (error.code === 11000) {
       return res.status(400).json({ message: 'Database Error: A unique constraint on student records was violated.' });
     }
@@ -149,18 +147,22 @@ router.post('/register-admin', async (req, res) => {
 
     const newAdmin = new Admin({ name: name.trim(), password, role: 'admin' });
     await newAdmin.save();
+    console.log("✅ [ADMIN REGISTER SUCCESS]:", newAdmin.name);
     res.status(201).json({ message: 'Admin account registered successfully!' });
   } catch (error) {
+    console.error("❌ [ADMIN REGISTER ERROR]:", error);
     res.status(500).json({ error: error.message });
   }
 });
 
 // ==========================================
-// 3. UNIFIED LOGIN
+// 3. UNIFIED LOGIN (WITH DETAILED PRODUCTION LOGS)
 // ==========================================
 router.post('/login', async (req, res) => {
   try {
     const { studentId, name, password, role } = req.body;
+    console.log(`\n🔍 [LOGIN ATTEMPT] Role: ${role || 'student'}, Identifier: ${studentId || name}`);
+
     let account;
 
     if (role === 'admin') {
@@ -174,12 +176,23 @@ router.post('/login', async (req, res) => {
       }).populate('hostelId');
     }
 
-    if (!account) return res.status(401).json({ message: 'Account not found. Please check your credentials.' });
-    if (!(await bcrypt.compare(password, account.password))) return res.status(401).json({ message: 'Invalid password.' });
+    if (!account) {
+      console.warn(`⚠️ [LOGIN FAILED] Account NOT found in Database for: ${studentId || name}`);
+      return res.status(401).json({ message: 'Account not found. Please check your credentials or register.' });
+    }
+
+    const isMatch = await bcrypt.compare(password, account.password);
+    if (!isMatch) {
+      console.warn(`⚠️ [LOGIN FAILED] Password mismatch for account ID: ${account._id}`);
+      return res.status(401).json({ message: 'Invalid password.' });
+    }
 
     const token = jwt.sign({ id: account._id, role: account.role }, JWT_SECRET, { expiresIn: '1d' });
+    console.log(`🚀 [LOGIN SUCCESS] Account authenticated: ${account._id} (${account.name || account.studentId})`);
+    
     res.json({ token, user: account });
   } catch (error) {
+    console.error(`💥 [LOGIN ERROR CRITICAL EXCEPTION]:`, error);
     res.status(500).json({ error: error.message });
   }
 });
@@ -200,21 +213,19 @@ router.post('/forgot-password', async (req, res) => {
     user.resetPasswordExpires = Date.now() + 10 * 60 * 1000; 
     await user.save();
 
-    console.log(`\n=============================================`);
-    console.log(`🔐 OTP for ${user.name} (${user.studentId}): ${otp}`);
-    console.log(`=============================================\n`);
+    console.log(`🔐 [OTP GENERATED] For ${user.name} (${user.studentId}): ${otp}`);
 
     if (!user.email || user.email.trim() === '') {
       return res.status(400).json({ message: 'No email address is linked to this account. Please contact the administrator.' });
     }
 
     const mailOptions = {
-      from: `"GNDU Dining & Attendance" <${process.env.EMAIL_USER}>`,
+      from: `"Student Mess Cooperative" <${process.env.EMAIL_USER}>`,
       to: user.email,
-      subject: 'Password Reset Verification Code - GNDU Portal',
+      subject: 'Password Reset Verification Code - Mess Portal',
       html: `
         <div style="font-family: Arial, sans-serif; max-width: 500px; margin: 0 auto; padding: 20px; border: 1px solid #e2e8f0; border-radius: 6px;">
-          <h2 style="color: #1e3a8a; text-align: center;">GNDU Mess Portal</h2>
+          <h2 style="color: #1e3a8a; text-align: center;">Student Mess Cooperative Ledger</h2>
           <p style="color: #334155; font-size: 15px;">Hello <strong>${user.name}</strong>,</p>
           <p style="color: #334155; font-size: 14px;">Use the verification code below to reset your password:</p>
           <div style="text-align: center; margin: 25px 0;">
@@ -232,6 +243,7 @@ router.post('/forgot-password', async (req, res) => {
 
     res.json({ message: `An OTP has been successfully sent to ${maskedEmail}` });
   } catch (error) {
+    console.error("❌ [FORGOT PASSWORD EMAIL ERROR]:", error);
     res.status(500).json({ error: 'Server error. Failed to send email.' });
   }
 });
@@ -258,8 +270,10 @@ router.post('/reset-password', async (req, res) => {
     user.resetPasswordExpires = null;
     await user.save();
 
+    console.log(`✅ [PASSWORD RESET SUCCESS] For user: ${user.studentId}`);
     res.json({ message: 'Password has been reset successfully! You can now log in.' });
   } catch (error) {
+    console.error("❌ [RESET PASSWORD ERROR]:", error);
     res.status(500).json({ error: error.message });
   }
 });
@@ -372,7 +386,6 @@ router.put(['/profile/:id', '/users/:identifier'], async (req, res) => {
     if (dob !== undefined) updateFields.dob = dob;
     if (profilePhoto !== undefined) updateFields.profilePhoto = profilePhoto;
 
-    // Academic & Family Details
     if (university !== undefined) updateFields.university = university.trim();
     if (department !== undefined) updateFields.department = department.trim();
     const resolvedFac = faculty || facultyName;
@@ -388,7 +401,6 @@ router.put(['/profile/:id', '/users/:identifier'], async (req, res) => {
     if (domicileState !== undefined) updateFields.domicileState = domicileState.trim();
     if (nationality !== undefined) updateFields.nationality = nationality.trim();
 
-    // Roll number verification
     const targetRoll = newRollNo || rollNo;
     let targetHostelNum = currentUser.hostelNo;
 
