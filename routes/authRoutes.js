@@ -29,17 +29,17 @@ router.post('/register', async (req, res) => {
   try {
     const { 
       name, 
-      fatherName,
-      motherName,
-      dob,
-      nationality,
+      fatherName, 
+      motherName, 
+      dob, 
+      nationality, 
       email, 
       studentId, 
       rollNo, 
       hostelNo, 
       gender, 
       mobileNo, 
-      password,
+      password, 
       university,   // Course / Degree Name
       department,   // Department Name
       faculty,      // Faculty Name
@@ -113,7 +113,9 @@ router.post('/register', async (req, res) => {
       session: session.trim(),
       domicileState: domicileState.trim(),
       category: domicileState.trim() === 'Punjab' ? category.trim() : 'General',
-      profilePhoto: profilePhoto.trim()
+      profilePhoto: profilePhoto.trim(),
+      isMobileLocked: false,
+      isEmailLocked: false
     });
 
     await newUser.save();
@@ -172,7 +174,7 @@ router.post('/login', async (req, res) => {
       if (!studentId || !studentId.trim()) return res.status(400).json({ message: 'Student ID is required for login.' });
       
       account = await User.findOne({ 
-        studentId: studentId.trim()
+        studentId: studentId.trim() 
       }).populate('hostelId');
     }
 
@@ -369,7 +371,8 @@ router.put(['/profile/:id', '/users/:identifier'], async (req, res) => {
       name, gender, mobileNo, dob, profilePhoto, 
       studentId, rollNo, newRollNo, hostelNo,
       university, department, faculty, facultyName, session, category, email,
-      fatherName, motherName, domicileState, nationality
+      fatherName, motherName, domicileState, nationality,
+      isMobileLocked, isEmailLocked
     } = req.body;
 
     let query = { studentId: identifier };
@@ -380,9 +383,40 @@ router.put(['/profile/:id', '/users/:identifier'], async (req, res) => {
 
     const updateFields = {};
 
+    // 1. Mobile Number: Single-Change Enforcement
+    if (mobileNo !== undefined && mobileNo !== '') {
+      const cleanedMobile = mobileNo.replace(/\D/g, '');
+      if (currentUser.isMobileLocked && cleanedMobile !== currentUser.mobileNo) {
+        return res.status(403).json({ message: 'Security Policy: Mobile number is permanently locked and cannot be edited.' });
+      }
+      if (cleanedMobile !== currentUser.mobileNo) {
+        updateFields.mobileNo = cleanedMobile;
+        updateFields.isMobileLocked = true; // Locks permanently upon first change
+      } else if (isMobileLocked !== undefined) {
+        updateFields.isMobileLocked = isMobileLocked;
+      }
+    } else if (isMobileLocked !== undefined) {
+      updateFields.isMobileLocked = isMobileLocked;
+    }
+
+    // 2. Email Address: Single-Change Enforcement
+    if (email !== undefined && email.trim() !== '') {
+      const cleanedEmail = email.trim().toLowerCase();
+      if (currentUser.isEmailLocked && cleanedEmail !== currentUser.email) {
+        return res.status(403).json({ message: 'Security Policy: Email address is permanently locked and cannot be edited.' });
+      }
+      if (cleanedEmail !== currentUser.email) {
+        updateFields.email = cleanedEmail;
+        updateFields.isEmailLocked = true; // Locks permanently upon first change
+      } else if (isEmailLocked !== undefined) {
+        updateFields.isEmailLocked = isEmailLocked;
+      }
+    } else if (isEmailLocked !== undefined) {
+      updateFields.isEmailLocked = isEmailLocked;
+    }
+
     if (name) updateFields.name = name.trim();
     if (gender) updateFields.gender = gender;
-    if (mobileNo !== undefined) updateFields.mobileNo = mobileNo.replace(/\D/g, '');
     if (dob !== undefined) updateFields.dob = dob;
     if (profilePhoto !== undefined) updateFields.profilePhoto = profilePhoto;
 
@@ -395,7 +429,6 @@ router.put(['/profile/:id', '/users/:identifier'], async (req, res) => {
     }
     if (session !== undefined) updateFields.session = session.trim();
     if (category !== undefined) updateFields.category = category;
-    if (email !== undefined) updateFields.email = email.trim().toLowerCase();
     if (fatherName !== undefined) updateFields.fatherName = fatherName.trim();
     if (motherName !== undefined) updateFields.motherName = motherName.trim();
     if (domicileState !== undefined) updateFields.domicileState = domicileState.trim();
@@ -440,6 +473,7 @@ router.put(['/profile/:id', '/users/:identifier'], async (req, res) => {
 
     res.json({ message: 'Profile updated successfully!', user: updatedUser });
   } catch (error) {
+    console.error("❌ [PROFILE UPDATE ERROR]:", error);
     res.status(500).json({ error: error.message });
   }
 });

@@ -42,6 +42,10 @@ const userSchema = new mongoose.Schema({
   profilePhoto: { type: String, default: '' },
   dob: { type: String, default: '' },
 
+  // --- SINGLE-CHANGE LOCK FIELDS ---
+  isMobileLocked: { type: Boolean, default: false },
+  isEmailLocked: { type: Boolean, default: false },
+
   // --- OTP PASSWORD RESET FIELDS ---
   resetPasswordOtp: { type: String, default: null },
   resetPasswordExpires: { type: Date, default: null }

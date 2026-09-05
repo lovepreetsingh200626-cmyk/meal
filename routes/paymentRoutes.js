@@ -47,4 +47,17 @@ router.get('/admin/all-payments', async (req, res) => {
   }
 });
 
+// 4. Delete/Revoke a payment record by its ID (Reset to Unpaid)
+router.delete('/:id', async (req, res) => {
+  try {
+    const deletedPayment = await Payment.findByIdAndDelete(req.params.id);
+    if (!deletedPayment) {
+      return res.status(404).json({ message: 'Payment record not found on server.' });
+    }
+    res.json({ message: 'Financial clearance revoked and reverted to unpaid successfully.' });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+});
+
 module.exports = router;
