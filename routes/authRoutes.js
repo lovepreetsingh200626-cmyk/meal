@@ -50,7 +50,7 @@ router.post('/register', async (req, res) => {
       profilePhoto  // Base64 Image
     } = req.body;
 
-    // STRICT MANDATORY FIELD VALIDATION (NO EMPTY BLOCKS ALLOWED)
+    // STRICT MANDATORY FIELD VALIDATION
     if (!name || !name.trim()) return res.status(400).json({ message: 'Candidate Name is required.' });
     if (!fatherName || !fatherName.trim()) return res.status(400).json({ message: "Father's Name is required." });
     if (!motherName || !motherName.trim()) return res.status(400).json({ message: "Mother's Name is required." });
@@ -90,6 +90,10 @@ router.post('/register', async (req, res) => {
       return res.status(400).json({ message: `Roll Number ${rollNo.trim()} is already taken in ${hostel.hostelNumber}.` });
     }
 
+    // Hash password securely before saving
+    const salt = await bcrypt.genSalt(10);
+    const hashedPassword = await bcrypt.hash(password, salt);
+
     const newUser = new User({
       name: name.trim(),
       fatherName: fatherName.trim(),
@@ -104,7 +108,7 @@ router.post('/register', async (req, res) => {
       hostelType: hostel.type,
       gender: gender.trim(),
       mobileNo: mobileNo.trim(),
-      password,
+      password: hashedPassword,
       role: 'student',
       university: university.trim(),
       department: department.trim(),
@@ -147,7 +151,10 @@ router.post('/register-admin', async (req, res) => {
     if (adminSecret !== ADMIN_SECRET_CODE) return res.status(403).json({ message: 'Invalid Admin Authorization Secret Code!' });
     if (!password || password.length < 8) return res.status(400).json({ message: 'Password must be at least 8 characters long.' });
 
-    const newAdmin = new Admin({ name: name.trim(), password, role: 'admin' });
+    const salt = await bcrypt.genSalt(10);
+    const hashedPassword = await bcrypt.hash(password, salt);
+
+    const newAdmin = new Admin({ name: name.trim(), password: hashedPassword, role: 'admin' });
     await newAdmin.save();
     console.log("✅ [ADMIN REGISTER SUCCESS]:", newAdmin.name);
     res.status(201).json({ message: 'Admin account registered successfully!' });
@@ -158,7 +165,7 @@ router.post('/register-admin', async (req, res) => {
 });
 
 // ==========================================
-// 3. UNIFIED LOGIN (WITH DETAILED PRODUCTION LOGS)
+// 3. UNIFIED LOGIN (WITH DETAILED LOGS & CASE-INSENSITIVE ID)
 // ==========================================
 router.post('/login', async (req, res) => {
   try {
@@ -173,8 +180,9 @@ router.post('/login', async (req, res) => {
     } else {
       if (!studentId || !studentId.trim()) return res.status(400).json({ message: 'Student ID is required for login.' });
       
+      // Case-insensitive lookup
       account = await User.findOne({ 
-        studentId: studentId.trim() 
+        studentId: { $regex: new RegExp(`^${studentId.trim()}$`, 'i') }
       }).populate('hostelId');
     }
 
@@ -207,7 +215,7 @@ router.post('/forgot-password', async (req, res) => {
     const { studentId } = req.body;
     if (!studentId) return res.status(400).json({ message: 'Student ID is required.' });
 
-    const user = await User.findOne({ studentId: studentId.trim() });
+    const user = await User.findOne({ studentId: { $regex: new RegExp(`^${studentId.trim()}$`, 'i') } });
     if (!user) return res.status(404).json({ message: 'No account found with this Student ID.' });
 
     const otp = Math.floor(100000 + Math.random() * 900000).toString();
@@ -260,14 +268,15 @@ router.post('/reset-password', async (req, res) => {
     if (newPassword.length < 8) return res.status(400).json({ message: 'New password must be at least 8 characters long.' });
 
     const user = await User.findOne({ 
-      studentId: studentId.trim(),
+      studentId: { $regex: new RegExp(`^${studentId.trim()}$`, 'i') },
       resetPasswordOtp: otp.trim(),
       resetPasswordExpires: { $gt: Date.now() }
     });
 
     if (!user) return res.status(400).json({ message: 'OTP is invalid or has expired. Please request a new one.' });
 
-    user.password = newPassword;
+    const salt = await bcrypt.genSalt(10);
+    user.password = await bcrypt.hash(newPassword, salt);
     user.resetPasswordOtp = null;
     user.resetPasswordExpires = null;
     await user.save();
@@ -383,7 +392,6 @@ router.put(['/profile/:id', '/users/:identifier'], async (req, res) => {
 
     const updateFields = {};
 
-    // 1. Mobile Number: Single-Change Enforcement
     if (mobileNo !== undefined && mobileNo !== '') {
       const cleanedMobile = mobileNo.replace(/\D/g, '');
       if (currentUser.isMobileLocked && cleanedMobile !== currentUser.mobileNo) {
@@ -391,7 +399,7 @@ router.put(['/profile/:id', '/users/:identifier'], async (req, res) => {
       }
       if (cleanedMobile !== currentUser.mobileNo) {
         updateFields.mobileNo = cleanedMobile;
-        updateFields.isMobileLocked = true; // Locks permanently upon first change
+        updateFields.isMobileLocked = true;
       } else if (isMobileLocked !== undefined) {
         updateFields.isMobileLocked = isMobileLocked;
       }
@@ -399,7 +407,6 @@ router.put(['/profile/:id', '/users/:identifier'], async (req, res) => {
       updateFields.isMobileLocked = isMobileLocked;
     }
 
-    // 2. Email Address: Single-Change Enforcement
     if (email !== undefined && email.trim() !== '') {
       const cleanedEmail = email.trim().toLowerCase();
       if (currentUser.isEmailLocked && cleanedEmail !== currentUser.email) {
@@ -407,7 +414,7 @@ router.put(['/profile/:id', '/users/:identifier'], async (req, res) => {
       }
       if (cleanedEmail !== currentUser.email) {
         updateFields.email = cleanedEmail;
-        updateFields.isEmailLocked = true; // Locks permanently upon first change
+        updateFields.isEmailLocked = true;
       } else if (isEmailLocked !== undefined) {
         updateFields.isEmailLocked = isEmailLocked;
       }
@@ -508,8 +515,14 @@ router.put('/admins/:id', async (req, res) => {
 
     if (!updatedAdmin) return res.status(404).json({ message: 'Admin not found.' });
 
-    res.json({ message: 'Admin details updated successfully!', admin: updatedAdmin });
+    // Return both 'admin' and 'user' keys to guarantee frontend compatibility
+    res.json({ 
+      message: 'Admin details updated successfully!', 
+      admin: updatedAdmin, 
+      user: updatedAdmin 
+    });
   } catch (error) {
+    console.error("❌ [ADMIN PROFILE UPDATE ERROR]:", error);
     res.status(500).json({ error: error.message });
   }
 });
@@ -523,5 +536,4 @@ router.delete('/admins/:id', async (req, res) => {
     res.status(500).json({ error: error.message });
   }
 });
-
 module.exports = router;
