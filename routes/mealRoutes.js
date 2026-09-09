@@ -1,239 +1,622 @@
 const express = require('express');
+const mongoose = require('mongoose');
+
 const MealRecord = require('../models/MealRecord');
+const User = require('../models/User');
 const Hostel = require('../models/Hostel');
+
+const {
+  authMiddleware,
+  requireStudent,
+  requireAdmin
+} = require('../middleware/authMiddleware');
+
 const router = express.Router();
 
-// ==========================================
-// 1. STUDENT / USER LOG MEAL ENTRY
-// ==========================================
-// @route   POST /api/meals/log
-router.post('/log', async (req, res) => {
-  try {
-    const { userId, hostelId, date, meals, extras, role } = req.body;
+// -------------------------------------------------------
+// HELPERS
+// -------------------------------------------------------
 
-    if (!userId || !date || !meals) {
-      return res.status(400).json({ message: 'User ID, date, and meal choices are required.' });
-    }
+const isValidObjectId = (id) =>
+  mongoose.Types.ObjectId.isValid(id);
 
-    // 1. Check if an entry already exists for this date
-    const existingEntry = await MealRecord.findOne({ userId, date });
+const isMealTaken = (value) =>
+  value === true ||
+  value === 1 ||
+  value === '1' ||
+  value === 'true' ||
+  value === 'taken' ||
+  value === 'Taken';
 
-    // 2. Strict Lock Enforcer: Prevent students from unchecking locked meals
-    const isStudent = (req.user && req.user.role === 'student') || role === 'student' || role !== 'admin';
+const normalizeMeals = (meals = {}) => ({
+  breakfast: isMealTaken(meals.breakfast),
+  lunch: isMealTaken(meals.lunch),
+  dinner: isMealTaken(meals.dinner)
+});
 
-    if (existingEntry && existingEntry.meals && isStudent) {
-      if (existingEntry.meals.breakfast && !meals.breakfast) {
-        return res.status(403).json({
-          message: 'Security Policy: Breakfast is permanently locked once selected. Contact an administrator to remove it.'
-        });
-      }
-      if (existingEntry.meals.lunch && !meals.lunch) {
-        return res.status(403).json({
-          message: 'Security Policy: Lunch is permanently locked once selected. Contact an administrator to remove it.'
-        });
-      }
-      if (existingEntry.meals.dinner && !meals.dinner) {
-        return res.status(403).json({
-          message: 'Security Policy: Dinner is permanently locked once selected. Contact an administrator to remove it.'
-        });
-      }
-    }
+const calculateMealCount = (meals) => {
+  let count = 0;
 
-    // 3. Retrieve hostel rates dynamically (Safe lookup supporting both ObjectId & string like "BH1")
-    let bRate = 37;
-    let lRate = 37;
-    let dRate = 37;
-    let resolvedHostelRef = null;
+  if (meals.breakfast) count++;
+  if (meals.lunch) count++;
+  if (meals.dinner) count++;
 
-    if (hostelId) {
-      const isValidObjectId = /^[0-9a-fA-F]{24}$/.test(hostelId);
-      const hostel = await Hostel.findOne({
-        $or: [
-          { _id: isValidObjectId ? hostelId : null },
-          { hostelNumber: hostelId }
-        ]
-      });
+  return count;
+};
 
-      if (hostel) {
-        resolvedHostelRef = hostel._id;
-        if (hostel.mealCosts) {
-          bRate = hostel.mealCosts.breakfast || 37;
-          lRate = hostel.mealCosts.lunch || 37;
-          dRate = hostel.mealCosts.dinner || 37;
-        }
-      }
-    }
+const normalizeExtras = (extras) => {
+  if (!Array.isArray(extras)) {
+    return [];
+  }
 
-    // 4. Calculate meal count and attended meals cost
-    let mealCount = 0;
-    let standardMealsCost = 0;
-
-    if (meals.breakfast) { mealCount++; standardMealsCost += bRate; }
-    if (meals.lunch) { mealCount++; standardMealsCost += lRate; }
-    if (meals.dinner) { mealCount++; standardMealsCost += dRate; }
-
-    // 5. Apply "1 Diet = 2 Diets" Rule
-    let appliedRule = 'STANDARD';
-    if (mealCount === 1) {
-      const missedRates = [];
-      if (!meals.breakfast) missedRates.push(bRate);
-      if (!meals.lunch) missedRates.push(lRate);
-      if (!meals.dinner) missedRates.push(dRate);
-
-      const penaltyCost = Math.min(...missedRates);
-      standardMealsCost += penaltyCost;
-      appliedRule = '1_DIET_BUMPED_TO_2';
-    } else if (mealCount === 0) {
-      appliedRule = 'NO_MEALS';
-    }
-
-    // 6. Calculate extras cost
-    const extrasCost = extras && extras.length > 0 
-      ? extras.reduce((sum, item) => sum + Number(item.cost || 0), 0) 
-      : 0;
-
-    const dailyTotalCost = standardMealsCost + extrasCost;
-
-    // 7. Upsert or update record for that date
-    const record = await MealRecord.findOneAndUpdate(
-      { userId, date },
-      { 
-        $set: {
-          hostelId: resolvedHostelRef || hostelId, 
-          meals, 
-          extras: extras || [], 
-          dailyTotalCost, 
-          appliedDietRule: appliedRule 
-        }
-      },
-      { upsert: true, new: true, setDefaultsOnInsert: true }
+  return extras
+    .map((item) => ({
+      itemName: String(
+        item?.itemName || item?.name || ''
+      ).trim(),
+      cost: Number(item?.cost) || 0
+    }))
+    .filter(
+      (item) =>
+        item.itemName &&
+        item.cost > 0
     );
+};
 
-    res.status(200).json(record);
-  } catch (error) {
-    console.error('Meal save error:', error);
-    res.status(500).json({ message: 'Server error saving meal log', error: error.message });
-  }
-});
+const calculateExtrasCost = (extras) =>
+  extras.reduce(
+    (sum, item) => sum + (Number(item.cost) || 0),
+    0
+  );
 
-// ==========================================
-// 2. GET MEALS FOR SINGLE STUDENT
-// ==========================================
-// @route   GET /api/meals/user/:userId
-router.get('/user/:userId', async (req, res) => {
-  try {
-    const records = await MealRecord.find({ userId: req.params.userId }).sort({ date: -1 });
-    res.json(records);
-  } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
-});
+// -------------------------------------------------------
+// STUDENT: SAVE MEAL RECORD
+// -------------------------------------------------------
 
-// ==========================================
-// 3. GET ALL MEALS (ADMIN ONLY)
-// ==========================================
-// @route   GET /api/meals/all
-router.get('/all', async (req, res) => {
-  try {
-    const allMeals = await MealRecord.find({})
-      .populate('userId', 'name rollNo')
-      .populate('hostelId', 'hostelNumber name')
-      .sort({ date: -1 });
-    res.json(allMeals);
-  } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
-});
+router.post(
+  '/log',
+  authMiddleware,
+  requireStudent,
+  async (req, res) => {
+    try {
+      /*
+       * SECURITY:
+       * NEVER trust req.body.userId.
+       *
+       * The authenticated student's ID comes from the JWT.
+       */
+      const authenticatedUserId = req.user.id;
 
-// ==========================================
-// 4. ADMIN: UPDATE ANY STUDENT'S MEAL LOG (FULL OVERRIDE)
-// ==========================================
-// @route   PUT /api/meals/:id
-router.put('/:id', async (req, res) => {
-  try {
-    const { meals, extras, date } = req.body;
-    
-    const mealLog = await MealRecord.findById(req.params.id);
-    if (!mealLog) {
-      return res.status(404).json({ message: 'Meal log not found.' });
-    }
-
-    let bRate = 37;
-    let lRate = 37;
-    let dRate = 37;
-
-    const hostelRef = mealLog.hostelId?._id || mealLog.hostelId;
-    if (hostelRef) {
-      const isValidObjectId = /^[0-9a-fA-F]{24}$/.test(hostelRef.toString());
-      const hostel = await Hostel.findOne({
-        $or: [
-          { _id: isValidObjectId ? hostelRef : null },
-          { hostelNumber: hostelRef }
-        ]
-      });
-
-      if (hostel && hostel.mealCosts) {
-        bRate = hostel.mealCosts.breakfast || 37;
-        lRate = hostel.mealCosts.lunch || 37;
-        dRate = hostel.mealCosts.dinner || 37;
+      if (!isValidObjectId(authenticatedUserId)) {
+        return res.status(401).json({
+          message: 'Invalid student authentication.'
+        });
       }
+
+      const student = await User.findById(
+        authenticatedUserId
+      );
+
+      if (!student) {
+        return res.status(401).json({
+          message:
+            'Student account no longer exists. Please contact the administrator.'
+        });
+      }
+
+      const {
+        date,
+        meals,
+        extras
+      } = req.body;
+
+      if (!date) {
+        return res.status(400).json({
+          message: 'Meal date is required.'
+        });
+      }
+
+      if (
+        !/^\d{4}-\d{2}-\d{2}$/.test(date)
+      ) {
+        return res.status(400).json({
+          message: 'Invalid meal date format.'
+        });
+      }
+
+      const normalizedMeals =
+        normalizeMeals(meals);
+
+      const normalizedExtras =
+        normalizeExtras(extras);
+
+      /*
+       * Check whether today's record already exists.
+       */
+      const existingEntry =
+        await MealRecord.findOne({
+          userId: authenticatedUserId,
+          date
+        });
+
+      /*
+       * Previously recorded meals are locked.
+       *
+       * We only allow new meal flags to be added.
+       * Existing true values cannot be changed to false.
+       */
+      if (existingEntry) {
+        const oldMeals =
+          normalizeMeals(existingEntry.meals);
+
+        if (
+          oldMeals.breakfast &&
+          !normalizedMeals.breakfast
+        ) {
+          return res.status(400).json({
+            message:
+              'Breakfast has already been recorded and cannot be removed.'
+          });
+        }
+
+        if (
+          oldMeals.lunch &&
+          !normalizedMeals.lunch
+        ) {
+          return res.status(400).json({
+            message:
+              'Lunch has already been recorded and cannot be removed.'
+          });
+        }
+
+        if (
+          oldMeals.dinner &&
+          !normalizedMeals.dinner
+        ) {
+          return res.status(400).json({
+            message:
+              'Dinner has already been recorded and cannot be removed.'
+          });
+        }
+      }
+
+      /*
+       * Resolve hostel from the actual student account.
+       *
+       * Do NOT trust hostelId supplied by the browser.
+       */
+      let hostel = null;
+
+      if (student.hostelId) {
+        hostel = await Hostel.findById(
+          student.hostelId
+        );
+      }
+
+      if (!hostel && student.hostelNo) {
+        hostel = await Hostel.findOne({
+          hostelNumber: student.hostelNo
+        });
+      }
+
+      if (!hostel) {
+        return res.status(400).json({
+          message:
+            'Your hostel could not be identified. Please contact the administrator.'
+        });
+      }
+
+      const breakfastCost =
+        Number(
+          hostel.mealCosts?.breakfast
+        ) || 37;
+
+      const lunchCost =
+        Number(
+          hostel.mealCosts?.lunch
+        ) || 37;
+
+      const dinnerCost =
+        Number(
+          hostel.mealCosts?.dinner
+        ) || 37;
+
+      // ---------------------------------------------------
+      // CALCULATE MEAL COST
+      // ---------------------------------------------------
+
+      const mealCount =
+        calculateMealCount(normalizedMeals);
+
+      let mealCost = 0;
+
+      if (normalizedMeals.breakfast) {
+        mealCost += breakfastCost;
+      }
+
+      if (normalizedMeals.lunch) {
+        mealCost += lunchCost;
+      }
+
+      if (normalizedMeals.dinner) {
+        mealCost += dinnerCost;
+      }
+
+      // ---------------------------------------------------
+      // ONE-MEAL MINIMUM DIET PENALTY
+      // ---------------------------------------------------
+
+      let penaltyCost = 0;
+
+      if (mealCount === 1) {
+        const missedMeals = [];
+
+        if (!normalizedMeals.breakfast) {
+          missedMeals.push(breakfastCost);
+        }
+
+        if (!normalizedMeals.lunch) {
+          missedMeals.push(lunchCost);
+        }
+
+        if (!normalizedMeals.dinner) {
+          missedMeals.push(dinnerCost);
+        }
+
+        if (missedMeals.length > 0) {
+          penaltyCost =
+            Math.min(...missedMeals);
+        }
+      }
+
+      // ---------------------------------------------------
+      // EXTRAS
+      // ---------------------------------------------------
+
+      const extrasCost =
+        calculateExtrasCost(
+          normalizedExtras
+        );
+
+      const dailyTotal =
+        mealCost +
+        penaltyCost +
+        extrasCost;
+
+      // ---------------------------------------------------
+      // SAVE
+      // ---------------------------------------------------
+
+      const record = await MealRecord.findOneAndUpdate(
+        {
+          userId: authenticatedUserId,
+          date
+        },
+        {
+          $set: {
+            userId: authenticatedUserId,
+            hostelId: hostel._id,
+            date,
+            meals: normalizedMeals,
+            extras: normalizedExtras,
+            mealCount,
+            mealCost,
+            penaltyCost,
+            extrasCost,
+            dailyTotal,
+
+            /*
+             * Keep this temporarily for compatibility with
+             * older frontend records/code.
+             */
+            dailyTotalCost: dailyTotal,
+
+            role: 'student'
+          }
+        },
+        {
+          new: true,
+          upsert: true,
+          runValidators: true
+        }
+      );
+
+      return res.status(200).json({
+        message:
+          'Meal record saved successfully.',
+        record
+      });
+    } catch (error) {
+      console.error(
+        'Save meal record error:',
+        error
+      );
+
+      return res.status(500).json({
+        message:
+          'Unable to save the meal record.',
+        error:
+          process.env.NODE_ENV === 'development'
+            ? error.message
+            : undefined
+      });
     }
-
-    let mealCount = 0;
-    let standardMealsCost = 0;
-
-    if (meals.breakfast) { mealCount++; standardMealsCost += bRate; }
-    if (meals.lunch) { mealCount++; standardMealsCost += lRate; }
-    if (meals.dinner) { mealCount++; standardMealsCost += dRate; }
-
-    let appliedRule = 'STANDARD';
-    if (mealCount === 1) {
-      const missedRates = [];
-      if (!meals.breakfast) missedRates.push(bRate);
-      if (!meals.lunch) missedRates.push(lRate);
-      if (!meals.dinner) missedRates.push(dRate);
-      standardMealsCost += Math.min(...missedRates);
-      appliedRule = '1_DIET_BUMPED_TO_2';
-    } else if (mealCount === 0) {
-      appliedRule = 'NO_MEALS';
-    }
-
-    const extrasCost = extras ? extras.reduce((sum, item) => sum + Number(item.cost || 0), 0) : 0;
-    const dailyTotalCost = standardMealsCost + extrasCost;
-
-    mealLog.meals = meals;
-    if (extras !== undefined) mealLog.extras = extras;
-    if (date) mealLog.date = date;
-    mealLog.dailyTotalCost = dailyTotalCost;
-    mealLog.appliedDietRule = appliedRule;
-
-    await mealLog.save();
-
-    const updatedLog = await MealRecord.findById(mealLog._id)
-      .populate('userId', 'name rollNo')
-      .populate('hostelId', 'hostelNumber name');
-
-    res.json({ message: 'Meal log updated successfully by Authority!', meal: updatedLog });
-  } catch (error) {
-    console.error('Meal update error:', error);
-    res.status(500).json({ message: 'Server error updating meal record', error: error.message });
   }
-});
+);
 
-// ==========================================
-// 5. ADMIN: DELETE ANY STUDENT'S MEAL LOG
-// ==========================================
-// @route   DELETE /api/meals/:id
-router.delete('/:id', async (req, res) => {
-  try {
-    const deletedMeal = await MealRecord.findByIdAndDelete(req.params.id);
-    if (!deletedMeal) {
-      return res.status(404).json({ message: 'Meal log not found.' });
+// -------------------------------------------------------
+// STUDENT: GET OWN MEAL RECORDS
+// -------------------------------------------------------
+
+router.get(
+  '/user/:userId',
+  authMiddleware,
+  async (req, res) => {
+    try {
+      const requestedUserId =
+        req.params.userId;
+
+      if (!isValidObjectId(requestedUserId)) {
+        return res.status(400).json({
+          message: 'Invalid student ID.'
+        });
+      }
+
+      /*
+       * Students can ONLY access their own records.
+       * Admins may access any student.
+       */
+      if (
+        req.user.role === 'student' &&
+        String(req.user.id) !==
+          String(requestedUserId)
+      ) {
+        return res.status(403).json({
+          message:
+            'You are not allowed to access another student\'s meal records.'
+        });
+      }
+
+      if (
+        req.user.role !== 'student' &&
+        req.user.role !== 'admin'
+      ) {
+        return res.status(403).json({
+          message: 'Access denied.'
+        });
+      }
+
+      const studentExists =
+        await User.exists({
+          _id: requestedUserId
+        });
+
+      if (
+        !studentExists &&
+        req.user.role === 'student'
+      ) {
+        return res.status(404).json({
+          message:
+            'Student account not found.'
+        });
+      }
+
+      const records =
+        await MealRecord.find({
+          userId: requestedUserId
+        })
+          .populate(
+            'userId',
+            'name rollNo studentId hostelNo department'
+          )
+          .populate(
+            'hostelId',
+            'hostelNumber name mealCosts'
+          )
+          .sort({
+            date: -1
+          });
+
+      return res.status(200).json(
+        records
+      );
+    } catch (error) {
+      console.error(
+        'Get student meals error:',
+        error
+      );
+
+      return res.status(500).json({
+        message:
+          'Unable to load meal records.'
+      });
     }
-    res.json({ message: 'Meal log deleted successfully.' });
-  } catch (error) {
-    res.status(500).json({ error: error.message });
   }
-});
+);
+
+// -------------------------------------------------------
+// ADMIN: GET ALL MEAL RECORDS
+// -------------------------------------------------------
+
+router.get(
+  '/all',
+  authMiddleware,
+  requireAdmin,
+  async (req, res) => {
+    try {
+      const records =
+        await MealRecord.find({})
+          .populate(
+            'userId',
+            'name rollNo studentId hostelNo department faculty mobileNo'
+          )
+          .populate(
+            'hostelId',
+            'hostelNumber name mealCosts'
+          )
+          .sort({
+            date: -1,
+            createdAt: -1
+          });
+
+      return res.status(200).json(
+        records
+      );
+    } catch (error) {
+      console.error(
+        'Get all meal records error:',
+        error
+      );
+
+      return res.status(500).json({
+        message:
+          'Unable to load all meal records.'
+      });
+    }
+  }
+);
+
+// -------------------------------------------------------
+// ADMIN: UPDATE MEAL RECORD
+// -------------------------------------------------------
+
+router.put(
+  '/:id',
+  authMiddleware,
+  requireAdmin,
+  async (req, res) => {
+    try {
+      const recordId =
+        req.params.id;
+
+      if (!isValidObjectId(recordId)) {
+        return res.status(400).json({
+          message:
+            'Invalid meal record ID.'
+        });
+      }
+
+      const existingRecord =
+        await MealRecord.findById(
+          recordId
+        );
+
+      if (!existingRecord) {
+        return res.status(404).json({
+          message:
+            'Meal record not found.'
+        });
+      }
+
+      const allowedFields = [
+        'meals',
+        'extras',
+        'date'
+      ];
+
+      const updateFields = {};
+
+      allowedFields.forEach(
+        (field) => {
+          if (
+            Object.prototype.hasOwnProperty.call(
+              req.body,
+              field
+            )
+          ) {
+            updateFields[field] =
+              req.body[field];
+          }
+        }
+      );
+
+      const updatedRecord =
+        await MealRecord.findByIdAndUpdate(
+          recordId,
+          {
+            $set: updateFields
+          },
+          {
+            new: true,
+            runValidators: true
+          }
+        )
+          .populate(
+            'userId',
+            'name rollNo studentId hostelNo department'
+          )
+          .populate(
+            'hostelId',
+            'hostelNumber name mealCosts'
+          );
+
+      return res.status(200).json({
+        message:
+          'Meal record updated successfully.',
+        record: updatedRecord
+      });
+    } catch (error) {
+      console.error(
+        'Update meal record error:',
+        error
+      );
+
+      return res.status(500).json({
+        message:
+          'Unable to update meal record.'
+      });
+    }
+  }
+);
+
+// -------------------------------------------------------
+// ADMIN: DELETE MEAL RECORD
+// -------------------------------------------------------
+
+router.delete(
+  '/:id',
+  authMiddleware,
+  requireAdmin,
+  async (req, res) => {
+    try {
+      const recordId =
+        req.params.id;
+
+      if (!isValidObjectId(recordId)) {
+        return res.status(400).json({
+          message:
+            'Invalid meal record ID.'
+        });
+      }
+
+      const deletedRecord =
+        await MealRecord.findByIdAndDelete(
+          recordId
+        );
+
+      if (!deletedRecord) {
+        return res.status(404).json({
+          message:
+            'Meal record not found.'
+        });
+      }
+
+      return res.status(200).json({
+        message:
+          'Meal record deleted successfully.'
+      });
+    } catch (error) {
+      console.error(
+        'Delete meal record error:',
+        error
+      );
+
+      return res.status(500).json({
+        message:
+          'Unable to delete meal record.'
+      });
+    }
+  }
+);
 
 module.exports = router;
