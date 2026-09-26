@@ -12,7 +12,9 @@ const hostelRoutes = require('./routes/hostelRoutes');
 const mealRoutes = require('./routes/mealRoutes');
 const paymentRoutes = require('./routes/paymentRoutes'); // ✨ Payment Ledger Routes
 
+
 // Explicitly set reliable fallback DNS servers (Cloudflare / Google)
+// Prevents SRV lookup failures on campus/local ISP networks
 try {
   dns.setServers(['1.1.1.1', '8.8.8.8', '8.8.4.4']);
 } catch (error) {
@@ -36,7 +38,7 @@ app.use(cors({
   allowedHeaders: ['Content-Type', 'Authorization']
 }));
 
-// Body Parsers: 10MB payload limit for student/admin Base64 photo uploads
+// Body Parsers: 10MB payload limit for student Base64 photo uploads
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ limit: '10mb', extended: true }));
 
@@ -46,7 +48,7 @@ app.use('/api/hostels', hostelRoutes);
 app.use('/api/meals', mealRoutes);
 app.use('/api/complaints', complaintRoutes);
 app.use('/api/notices', noticeRoutes);
-app.use('/api/payments', paymentRoutes);
+app.use('/api/payments', paymentRoutes); // ✨ Mounted payments API
 
 // Fallback Aliases (Ensures frontend requests work with or without /api baseURL)
 app.use('/auth', authRoutes);
@@ -54,7 +56,7 @@ app.use('/hostels', hostelRoutes);
 app.use('/meals', mealRoutes);
 app.use('/complaints', complaintRoutes);
 app.use('/notices', noticeRoutes);
-app.use('/payments', paymentRoutes);
+app.use('/payments', paymentRoutes); // ✨ Mounted payments fallback
 
 // Root Health Check Endpoint
 app.get('/', (req, res) => {
@@ -82,15 +84,19 @@ if (!MONGO_URI) {
 }
 
 mongoose.connect(MONGO_URI, {
-  serverSelectionTimeoutMS: 5000 
+  serverSelectionTimeoutMS: 5000 // Fail fast after 5s instead of hanging indefinitely
 })
   .then(() => {
     console.log("✅ Connected to MongoDB successfully");
+    
+ 
+
     app.listen(PORT, () => {
       console.log(`🚀 Server listening on port ${PORT}`);
     });
   })
   .catch((err) => {
     console.error("❌ MongoDB connection error:", err.message);
+    console.error("👉 TIP: Check your internet connection or MongoDB Atlas IP Whitelist (0.0.0.0/0)");
     process.exit(1);
   });
