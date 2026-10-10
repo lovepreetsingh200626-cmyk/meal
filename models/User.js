@@ -99,9 +99,82 @@ const userSchema = new mongoose.Schema(
       trim: true
     },
 
+    currentYear: {
+      type: Number,
+      default: null,
+      min: 1
+    },
+
+    currentSemester: {
+      type: Number,
+      default: null,
+      min: 1
+    },
+
+    // =========================================================
+    // PREVIOUS QUALIFICATION
+    // =========================================================
+
+    previousQualification: {
+      type: String,
+      default: '',
+      trim: true
+    },
+
+    previousQualificationYear: {
+      type: Number,
+      default: null
+    },
+
+    previousPercentage: {
+      type: Number,
+      default: null,
+      min: 0,
+      max: 100
+    },
+
+    previousCgpa: {
+      type: Number,
+      default: null,
+      min: 0,
+      max: 10
+    },
+
+    // =========================================================
+    // CURRENT ACADEMIC PERFORMANCE
+    // =========================================================
+
+    percentage: {
+      type: Number,
+      default: null,
+      min: 0,
+      max: 100
+    },
+
+    cgpa: {
+      type: Number,
+      default: null,
+      min: 0,
+      max: 10
+    },
+
+    // =========================================================
+    // CATEGORY
+    // =========================================================
+
     category: {
       type: String,
-      enum: ['General', 'SC', 'BC', 'OBC', 'Other', ''],
+      enum: [
+        'General',
+        'SC',
+        'ST',
+        'BC',
+        'OBC',
+        'EWS',
+        'Minority',
+        'Other',
+        ''
+      ],
       default: 'General'
     },
 
@@ -121,6 +194,29 @@ const userSchema = new mongoose.Schema(
       trim: true
     },
 
+    parentOccupation: {
+      type: String,
+      default: '',
+      trim: true
+    },
+
+    annualFamilyIncome: {
+      type: Number,
+      default: null,
+      min: 0
+    },
+
+    incomeCertificateNumber: {
+      type: String,
+      default: '',
+      trim: true
+    },
+
+    incomeCertificateDate: {
+      type: String,
+      default: ''
+    },
+
     // =========================================================
     // HOSTEL INFORMATION
     // =========================================================
@@ -138,6 +234,12 @@ const userSchema = new mongoose.Schema(
       uppercase: true,
       trim: true,
       index: true
+    },
+
+    hostelType: {
+      type: String,
+      default: '',
+      trim: true
     },
 
     // =========================================================
@@ -193,38 +295,60 @@ const userSchema = new mongoose.Schema(
   }
 );
 
+
 // =============================================================
 // PASSWORD HASHING
 // =============================================================
 
 userSchema.pre('save', async function () {
-  if (!this.isModified('password')) return;
+  if (!this.isModified('password')) {
+    return;
+  }
 
-  this.password = await bcrypt.hash(this.password, 10);
+  this.password =
+    await bcrypt.hash(
+      this.password,
+      10
+    );
 });
+
 
 // =============================================================
 // PASSWORD VALIDATION
 // =============================================================
 
-userSchema.methods.comparePassword = async function (candidatePassword) {
-  return await bcrypt.compare(candidatePassword, this.password);
-};
+userSchema.methods.comparePassword =
+  async function (candidatePassword) {
+    return await bcrypt.compare(
+      candidatePassword,
+      this.password
+    );
+  };
+
 
 // =============================================================
 // INDEXES
 // =============================================================
 
-// Useful for hostel-wise student lists
+// Hostel-wise student lists
 userSchema.index({
   hostelId: 1,
   hostelNo: 1
 });
 
-// Useful for searching students
+// Student searching
 userSchema.index({
   name: 1,
   rollNo: 1
 });
 
-module.exports = mongoose.model('User', userSchema);
+
+// =============================================================
+// EXPORT
+// =============================================================
+
+module.exports =
+  mongoose.model(
+    'User',
+    userSchema
+  );

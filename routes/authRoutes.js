@@ -167,10 +167,8 @@ router.post('/register', async (req, res) => {
       });
     }
 
-
     const resolvedFaculty =
       faculty || facultyName || 'General';
-
 
     if (!session || !session.trim()) {
       return res.status(400).json({
@@ -338,9 +336,7 @@ router.post('/register', async (req, res) => {
           domicileState.trim(),
 
         category:
-          domicileState.trim() === 'Punjab'
-            ? category.trim()
-            : 'General',
+          category.trim(),
 
         profilePhoto:
           profilePhoto.trim(),
@@ -1454,38 +1450,96 @@ router.put(
 
 
       const {
+
+        // -------------------------------------------------
+        // BASIC INFORMATION
+        // -------------------------------------------------
+
         name,
         gender,
         mobileNo,
         dob,
         profilePhoto,
 
+        // -------------------------------------------------
+        // IDENTITY / HOSTEL
+        // -------------------------------------------------
+
         studentId,
         rollNo,
         newRollNo,
         hostelNo,
+
+        // -------------------------------------------------
+        // ACADEMIC INFORMATION
+        // -------------------------------------------------
 
         university,
         department,
         faculty,
         facultyName,
         session,
+
+        currentYear,
+        currentSemester,
+
+        // -------------------------------------------------
+        // PREVIOUS QUALIFICATION
+        // -------------------------------------------------
+
+        previousQualification,
+        previousQualificationYear,
+        previousPercentage,
+        previousCgpa,
+
+        // -------------------------------------------------
+        // CURRENT ACADEMIC PERFORMANCE
+        // -------------------------------------------------
+
+        percentage,
+        cgpa,
+
+        // -------------------------------------------------
+        // PERSONAL INFORMATION
+        // -------------------------------------------------
+
         category,
         email,
-
-        fatherName,
-        motherName,
         domicileState,
         nationality,
 
+        // -------------------------------------------------
+        // FAMILY INFORMATION
+        // -------------------------------------------------
+
+        fatherName,
+        motherName,
+        parentOccupation,
+
+        // -------------------------------------------------
+        // FINANCIAL INFORMATION
+        // -------------------------------------------------
+
+        annualFamilyIncome,
+        incomeCertificateNumber,
+        incomeCertificateDate,
+
+        // -------------------------------------------------
+        // SECURITY
+        // -------------------------------------------------
+
         isMobileLocked,
         isEmailLocked
+
       } = req.body;
 
 
+      // ===================================================
+      // FIND STUDENT
+      // ===================================================
+
       let query = {
-        studentId:
-          identifier
+        studentId: identifier
       };
 
 
@@ -1496,17 +1550,14 @@ router.put(
       ) {
 
         query = {
-          _id:
-            identifier
+          _id: identifier
         };
 
       }
 
 
       const currentUser =
-        await User.findOne(
-          query
-        );
+        await User.findOne(query);
 
 
       if (!currentUser) {
@@ -1522,9 +1573,49 @@ router.put(
       const updateFields = {};
 
 
-      // ---------------------------------------------------
-      // MOBILE
-      // ---------------------------------------------------
+      // ===================================================
+      // BASIC INFORMATION
+      // ===================================================
+
+      if (
+        name !== undefined &&
+        typeof name === 'string' &&
+        name.trim() !== ''
+      ) {
+
+        updateFields.name =
+          name.trim();
+
+      }
+
+
+      if (gender !== undefined) {
+
+        updateFields.gender =
+          gender;
+
+      }
+
+
+      if (dob !== undefined) {
+
+        updateFields.dob =
+          dob;
+
+      }
+
+
+      if (profilePhoto !== undefined) {
+
+        updateFields.profilePhoto =
+          profilePhoto;
+
+      }
+
+
+      // ===================================================
+      // MOBILE NUMBER
+      // ===================================================
 
       if (
         mobileNo !== undefined &&
@@ -1537,6 +1628,22 @@ router.put(
             ''
           );
 
+
+        if (
+          cleanedMobile.length !== 10
+        ) {
+
+          return res.status(400).json({
+            message:
+              'Mobile number must contain exactly 10 digits.'
+          });
+
+        }
+
+
+        // -----------------------------------------------
+        // LOCKED MOBILE CANNOT BE CHANGED
+        // -----------------------------------------------
 
         if (
           currentUser.isMobileLocked &&
@@ -1552,6 +1659,10 @@ router.put(
         }
 
 
+        // -----------------------------------------------
+        // FIRST CHANGE LOCKS MOBILE
+        // -----------------------------------------------
+
         if (
           cleanedMobile !==
           currentUser.mobileNo
@@ -1563,7 +1674,8 @@ router.put(
           updateFields.isMobileLocked =
             true;
 
-        } else if (
+        }
+        else if (
           isMobileLocked !== undefined
         ) {
 
@@ -1572,7 +1684,8 @@ router.put(
 
         }
 
-      } else if (
+      }
+      else if (
         isMobileLocked !== undefined
       ) {
 
@@ -1582,12 +1695,13 @@ router.put(
       }
 
 
-      // ---------------------------------------------------
+      // ===================================================
       // EMAIL
-      // ---------------------------------------------------
+      // ===================================================
 
       if (
         email !== undefined &&
+        typeof email === 'string' &&
         email.trim() !== ''
       ) {
 
@@ -1596,6 +1710,32 @@ router.put(
             .trim()
             .toLowerCase();
 
+
+        // -----------------------------------------------
+        // BASIC EMAIL FORMAT CHECK
+        // -----------------------------------------------
+
+        const emailPattern =
+          /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+
+        if (
+          !emailPattern.test(
+            cleanedEmail
+          )
+        ) {
+
+          return res.status(400).json({
+            message:
+              'Please enter a valid email address.'
+          });
+
+        }
+
+
+        // -----------------------------------------------
+        // LOCKED EMAIL CANNOT BE CHANGED
+        // -----------------------------------------------
 
         if (
           currentUser.isEmailLocked &&
@@ -1611,6 +1751,10 @@ router.put(
         }
 
 
+        // -----------------------------------------------
+        // FIRST CHANGE LOCKS EMAIL
+        // -----------------------------------------------
+
         if (
           cleanedEmail !==
           currentUser.email
@@ -1622,7 +1766,8 @@ router.put(
           updateFields.isEmailLocked =
             true;
 
-        } else if (
+        }
+        else if (
           isEmailLocked !== undefined
         ) {
 
@@ -1631,7 +1776,8 @@ router.put(
 
         }
 
-      } else if (
+      }
+      else if (
         isEmailLocked !== undefined
       ) {
 
@@ -1641,170 +1787,614 @@ router.put(
       }
 
 
-      if (name) {
-        updateFields.name =
-          name.trim();
-      }
-
-
-      if (gender) {
-        updateFields.gender =
-          gender;
-      }
-
-
-      if (dob !== undefined) {
-        updateFields.dob =
-          dob;
-      }
-
-
-      if (profilePhoto !== undefined) {
-        updateFields.profilePhoto =
-          profilePhoto;
-      }
-
-
-      // ---------------------------------------------------
+      // ===================================================
       // ACADEMIC INFORMATION
-      // ---------------------------------------------------
+      // ===================================================
 
-      if (university !== undefined) {
+      if (
+        university !== undefined &&
+        typeof university === 'string'
+      ) {
+
         updateFields.university =
           university.trim();
+
       }
 
 
-      if (department !== undefined) {
+      if (
+        department !== undefined &&
+        typeof department === 'string'
+      ) {
+
         updateFields.department =
           department.trim();
+
       }
 
 
-      const resolvedFac =
-        faculty || facultyName;
+      const resolvedFaculty =
+        faculty !== undefined
+          ? faculty
+          : facultyName;
 
 
-      if (resolvedFac !== undefined) {
+      if (
+        resolvedFaculty !== undefined &&
+        typeof resolvedFaculty === 'string'
+      ) {
 
         updateFields.faculty =
-          resolvedFac.trim();
+          resolvedFaculty.trim();
 
         updateFields.facultyName =
-          resolvedFac.trim();
+          resolvedFaculty.trim();
 
       }
 
 
-      if (session !== undefined) {
+      if (
+        session !== undefined &&
+        typeof session === 'string'
+      ) {
+
         updateFields.session =
           session.trim();
+
       }
 
 
-      if (category !== undefined) {
+      // ===================================================
+      // CURRENT YEAR
+      // ===================================================
+
+      if (
+        currentYear !== undefined &&
+        currentYear !== ''
+      ) {
+
+        const year =
+          Number(currentYear);
+
+
+        if (
+          !Number.isInteger(year) ||
+          year < 1
+        ) {
+
+          return res.status(400).json({
+            message:
+              'Current academic year is invalid.'
+          });
+
+        }
+
+
+        updateFields.currentYear =
+          year;
+
+      }
+
+
+      // ===================================================
+      // CURRENT SEMESTER
+      // ===================================================
+
+      if (
+        currentSemester !== undefined &&
+        currentSemester !== ''
+      ) {
+
+        const semester =
+          Number(currentSemester);
+
+
+        if (
+          !Number.isInteger(semester) ||
+          semester < 1
+        ) {
+
+          return res.status(400).json({
+            message:
+              'Current semester is invalid.'
+          });
+
+        }
+
+
+        updateFields.currentSemester =
+          semester;
+
+      }
+
+
+      // ===================================================
+      // PREVIOUS QUALIFICATION
+      // ===================================================
+
+      if (
+        previousQualification !== undefined &&
+        typeof previousQualification === 'string'
+      ) {
+
+        updateFields.previousQualification =
+          previousQualification.trim();
+
+      }
+
+
+      // ===================================================
+      // PREVIOUS QUALIFICATION YEAR
+      // ===================================================
+
+      if (
+        previousQualificationYear !== undefined &&
+        previousQualificationYear !== ''
+      ) {
+
+        const qualificationYear =
+          Number(
+            previousQualificationYear
+          );
+
+
+        if (
+          !Number.isInteger(
+            qualificationYear
+          )
+        ) {
+
+          return res.status(400).json({
+            message:
+              'Previous qualification year is invalid.'
+          });
+
+        }
+
+
+        updateFields.previousQualificationYear =
+          qualificationYear;
+
+      }
+
+
+      // ===================================================
+      // PREVIOUS PERCENTAGE
+      // ===================================================
+
+      if (
+        previousPercentage !== undefined &&
+        previousPercentage !== ''
+      ) {
+
+        const value =
+          Number(
+            previousPercentage
+          );
+
+
+        if (
+          Number.isNaN(value) ||
+          value < 0 ||
+          value > 100
+        ) {
+
+          return res.status(400).json({
+            message:
+              'Previous percentage must be between 0 and 100.'
+          });
+
+        }
+
+
+        updateFields.previousPercentage =
+          value;
+
+      }
+
+
+      // ===================================================
+      // PREVIOUS CGPA
+      // ===================================================
+
+      if (
+        previousCgpa !== undefined &&
+        previousCgpa !== ''
+      ) {
+
+        const value =
+          Number(
+            previousCgpa
+          );
+
+
+        if (
+          Number.isNaN(value) ||
+          value < 0 ||
+          value > 10
+        ) {
+
+          return res.status(400).json({
+            message:
+              'Previous CGPA must be between 0 and 10.'
+          });
+
+        }
+
+
+        updateFields.previousCgpa =
+          value;
+
+      }
+
+
+      // ===================================================
+      // CURRENT PERCENTAGE
+      // ===================================================
+
+      if (
+        percentage !== undefined &&
+        percentage !== ''
+      ) {
+
+        const value =
+          Number(
+            percentage
+          );
+
+
+        if (
+          Number.isNaN(value) ||
+          value < 0 ||
+          value > 100
+        ) {
+
+          return res.status(400).json({
+            message:
+              'Percentage must be between 0 and 100.'
+          });
+
+        }
+
+
+        updateFields.percentage =
+          value;
+
+      }
+
+
+      // ===================================================
+      // CURRENT CGPA
+      // ===================================================
+
+      if (
+        cgpa !== undefined &&
+        cgpa !== ''
+      ) {
+
+        const value =
+          Number(cgpa);
+
+
+        if (
+          Number.isNaN(value) ||
+          value < 0 ||
+          value > 10
+        ) {
+
+          return res.status(400).json({
+            message:
+              'CGPA must be between 0 and 10.'
+          });
+
+        }
+
+
+        updateFields.cgpa =
+          value;
+
+      }
+
+
+      // ===================================================
+      // CATEGORY
+      // ===================================================
+
+      if (
+        category !== undefined &&
+        typeof category === 'string'
+      ) {
+
         updateFields.category =
-          category;
+          category.trim();
+
       }
 
 
-      // ---------------------------------------------------
+      // ===================================================
       // FAMILY INFORMATION
-      // ---------------------------------------------------
+      // ===================================================
 
-      if (fatherName !== undefined) {
+      if (
+        fatherName !== undefined &&
+        typeof fatherName === 'string'
+      ) {
+
         updateFields.fatherName =
           fatherName.trim();
+
       }
 
 
-      if (motherName !== undefined) {
+      if (
+        motherName !== undefined &&
+        typeof motherName === 'string'
+      ) {
+
         updateFields.motherName =
           motherName.trim();
+
       }
 
 
-      if (domicileState !== undefined) {
+      if (
+        parentOccupation !== undefined &&
+        typeof parentOccupation === 'string'
+      ) {
+
+        updateFields.parentOccupation =
+          parentOccupation.trim();
+
+      }
+
+
+      // ===================================================
+      // ANNUAL FAMILY INCOME
+      // ===================================================
+
+      if (
+        annualFamilyIncome !== undefined &&
+        annualFamilyIncome !== ''
+      ) {
+
+        const income =
+          Number(
+            annualFamilyIncome
+          );
+
+
+        if (
+          Number.isNaN(income) ||
+          income < 0
+        ) {
+
+          return res.status(400).json({
+            message:
+              'Annual family income is invalid.'
+          });
+
+        }
+
+
+        updateFields.annualFamilyIncome =
+          income;
+
+      }
+
+
+      // ===================================================
+      // INCOME CERTIFICATE NUMBER
+      // ===================================================
+
+      if (
+        incomeCertificateNumber !== undefined &&
+        typeof incomeCertificateNumber === 'string'
+      ) {
+
+        updateFields.incomeCertificateNumber =
+          incomeCertificateNumber.trim();
+
+      }
+
+
+      // ===================================================
+      // INCOME CERTIFICATE DATE
+      // ===================================================
+
+      if (
+        incomeCertificateDate !== undefined
+      ) {
+
+        updateFields.incomeCertificateDate =
+          incomeCertificateDate;
+
+      }
+
+
+      // ===================================================
+      // DOMICILE
+      // ===================================================
+
+      if (
+        domicileState !== undefined &&
+        typeof domicileState === 'string'
+      ) {
+
         updateFields.domicileState =
           domicileState.trim();
+
       }
 
 
-      if (nationality !== undefined) {
+      // ===================================================
+      // NATIONALITY
+      // ===================================================
+
+      if (
+        nationality !== undefined &&
+        typeof nationality === 'string'
+      ) {
+
         updateFields.nationality =
           nationality.trim();
+
       }
 
 
-      // ---------------------------------------------------
+      // ===================================================
       // HOSTEL
-      // ---------------------------------------------------
+      // ===================================================
 
       const targetRoll =
-        newRollNo ||
-        rollNo;
+        newRollNo !== undefined &&
+        newRollNo !== ''
+          ? newRollNo
+          : rollNo;
 
 
       let targetHostelNum =
         currentUser.hostelNo;
 
 
-      if (hostelNo) {
+      if (
+        hostelNo !== undefined &&
+        hostelNo !== ''
+      ) {
 
         const hostel =
           await Hostel.findOne({
 
             hostelNumber:
-              hostelNo.toUpperCase()
+              hostelNo
+                .trim()
+                .toUpperCase()
 
           });
 
 
-        if (hostel) {
+        if (!hostel) {
 
-          updateFields.hostelId =
-            hostel._id;
+          return res.status(404).json({
+            message:
+              'Selected hostel was not found.'
+          });
 
-          updateFields.hostelNo =
-            hostel.hostelNumber;
+        }
 
-          updateFields.hostelType =
-            hostel.type;
 
-          targetHostelNum =
-            hostel.hostelNumber;
+        updateFields.hostelId =
+          hostel._id;
+
+        updateFields.hostelNo =
+          hostel.hostelNumber;
+
+        updateFields.hostelType =
+          hostel.type;
+
+        targetHostelNum =
+          hostel.hostelNumber;
+
+      }
+
+
+      // ===================================================
+      // ROLL NUMBER CONFLICT
+      // ===================================================
+
+      if (
+        targetRoll !== undefined &&
+        targetRoll !== ''
+      ) {
+
+        const cleanedRoll =
+          targetRoll
+            .toString()
+            .trim();
+
+
+        const rollChanged =
+          cleanedRoll !==
+          currentUser.rollNo;
+
+
+        const hostelChanged =
+          targetHostelNum !==
+          currentUser.hostelNo;
+
+
+        if (
+          rollChanged ||
+          hostelChanged
+        ) {
+
+          const rollConflict =
+            await User.findOne({
+
+              rollNo:
+                cleanedRoll,
+
+              hostelNo:
+                targetHostelNum,
+
+              _id: {
+                $ne:
+                  currentUser._id
+              }
+
+            });
+
+
+          if (rollConflict) {
+
+            return res.status(400).json({
+              message:
+                `Roll Number ${cleanedRoll} is already taken in ${targetHostelNum}.`
+            });
+
+          }
+
+
+          updateFields.rollNo =
+            cleanedRoll;
 
         }
 
       }
 
 
-      // ---------------------------------------------------
-      // ROLL NUMBER CONFLICT
-      // ---------------------------------------------------
+      // ===================================================
+      // STUDENT ID
+      // ===================================================
 
       if (
-        targetRoll &&
-        (
-          targetRoll.trim() !==
-            currentUser.rollNo ||
-
-          (
-            hostelNo &&
-            targetHostelNum !==
-              currentUser.hostelNo
-          )
-        )
+        studentId !== undefined &&
+        typeof studentId === 'string' &&
+        studentId.trim() !== '' &&
+        studentId.trim() !==
+          currentUser.studentId
       ) {
 
-        const rollConflict =
+        const cleanedStudentId =
+          studentId.trim();
+
+
+        if (
+          cleanedStudentId.length > 13
+        ) {
+
+          return res.status(400).json({
+            message:
+              'Student ID cannot exceed 13 digits.'
+          });
+
+        }
+
+
+        const existingId =
           await User.findOne({
 
-            rollNo:
-              targetRoll.trim(),
-
-            hostelNo:
-              targetHostelNum,
+            studentId:
+              cleanedStudentId,
 
             _id: {
               $ne:
@@ -1814,65 +2404,52 @@ router.put(
           });
 
 
-        if (rollConflict) {
-
-          return res.status(400).json({
-
-            message:
-              `Roll Number ${targetRoll.trim()} is already taken in ${targetHostelNum}.`
-
-          });
-
-        }
-
-
-        updateFields.rollNo =
-          targetRoll.trim();
-
-      }
-
-
-      // ---------------------------------------------------
-      // STUDENT ID
-      // ---------------------------------------------------
-
-      if (
-        studentId !== undefined &&
-        studentId.trim() !== '' &&
-        studentId.trim() !==
-          currentUser.studentId
-      ) {
-
-        const existingId =
-          await User.findOne({
-
-            studentId:
-              studentId.trim()
-
-          });
-
-
         if (existingId) {
 
           return res.status(400).json({
-
             message:
               'This new Student ID already exists.'
-
           });
 
         }
 
 
         updateFields.studentId =
-          studentId.trim();
+          cleanedStudentId;
 
       }
 
 
-      // ---------------------------------------------------
-      // UPDATE
-      // ---------------------------------------------------
+      // ===================================================
+      // NOTHING TO UPDATE
+      // ===================================================
+
+      if (
+        Object.keys(updateFields).length === 0
+      ) {
+
+        const unchangedUser =
+          await User.findOne(query)
+            .select('-password')
+            .populate('hostelId');
+
+
+        return res.json({
+
+          message:
+            'No changes were made to the student profile.',
+
+          user:
+            unchangedUser
+
+        });
+
+      }
+
+
+      // ===================================================
+      // SAVE UPDATED STUDENT
+      // ===================================================
 
       const updatedUser =
         await User.findOneAndUpdate(
@@ -1890,7 +2467,6 @@ router.put(
 
             runValidators:
               true
-
           }
 
         )
@@ -1898,10 +2474,30 @@ router.put(
         .populate('hostelId');
 
 
-      res.json({
+      if (!updatedUser) {
+
+        return res.status(404).json({
+          message:
+            'Student could not be updated.'
+        });
+
+      }
+
+
+      // ===================================================
+      // RESPONSE
+      // ===================================================
+
+      console.log(
+        '✅ [PROFILE UPDATE SUCCESS]:',
+        updatedUser.studentId
+      );
+
+
+      return res.json({
 
         message:
-          'Profile updated successfully!',
+          'Student profile updated successfully.',
 
         user:
           updatedUser
@@ -1916,7 +2512,49 @@ router.put(
       );
 
 
-      res.status(500).json({
+      // -----------------------------------------------
+      // DUPLICATE KEY
+      // -----------------------------------------------
+
+      if (
+        error.code === 11000
+      ) {
+
+        return res.status(400).json({
+
+          message:
+            'A student record with this Student ID already exists.'
+
+        });
+
+      }
+
+
+      // -----------------------------------------------
+      // VALIDATION ERROR
+      // -----------------------------------------------
+
+      if (
+        error.name === 'ValidationError'
+      ) {
+
+        return res.status(400).json({
+
+          message:
+            'Student profile validation failed.',
+
+          error:
+            error.message
+
+        });
+
+      }
+
+
+      return res.status(500).json({
+
+        message:
+          'Failed to update student profile.',
 
         error:
           error.message
@@ -1924,6 +2562,7 @@ router.put(
       });
 
     }
+
   }
 );
 
